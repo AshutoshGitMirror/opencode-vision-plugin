@@ -1,0 +1,9 @@
+node_modules/
+dist-ts/
+*.mjs
+*.ts
+runtime-stub.ts
+opencode-ai-plugin-stub.d.ts
+node-env.d.ts
+tsconfig.json
+*.tgz
