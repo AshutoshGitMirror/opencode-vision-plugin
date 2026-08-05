@@ -1,10 +1,19 @@
 {
   "name": "opencode-vision-plugin",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Visual vision tools (describe, OCR, analyze) for opencode as an in-process plugin. Direct fetch to Gemini + NVIDIA NIM with provider-chain fallback, dual-describe, and nested-object config. No MCP server, no subprocess, no pip.",
   "main": "opencode-vision-plugin.js",
   "types": "index.d.ts",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AshutoshGitMirror/opencode-vision-plugin.git"
+  },
+  "homepage": "https://github.com/AshutoshGitMirror/opencode-vision-plugin",
+  "bugs": {
+    "url": "https://github.com/AshutoshGitMirror/opencode-vision-plugin/issues"
+  },
+  "author": "Ashutosh Sononey <AshutoshGitMirror@users.noreply.github.com>",
   "exports": {
     ".": {
       "types": "./index.d.ts",
