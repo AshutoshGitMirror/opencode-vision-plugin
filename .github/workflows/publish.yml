@@ -19,7 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
+      # NOTE: no registry-url here — it would write an empty _authToken
+      # into .npmrc, which npm sends to the registry and gets treated as
+      # anonymous (404 on PUT). Trusted publishing (OIDC) needs no auth line.
 
       # The release tag IS the version to publish.
       - name: Sync package.json version from the release tag
