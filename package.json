@@ -43,7 +43,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "esbuild vision.ts --bundle --platform=node --format=cjs --outfile=opencode-vision-plugin.js"
+    "build": "esbuild vision.ts --bundle --platform=node --format=cjs --external:@opencode-ai/plugin --outfile=opencode-vision-plugin.js"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"
