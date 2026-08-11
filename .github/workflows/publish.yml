@@ -22,10 +22,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       # NOTE: no registry-url here — it would write an empty _authToken
-      # into .npmrc, which npm sends to the registry and gets treated as
-      # anonymous (404 on PUT). Trusted publishing (OIDC) needs no auth line.
+      # into .npmrc. Trusted publishing (OIDC) needs no auth line.
+      # Trusted publishing requires npm >= 11.5.1 (node >= 22.14); node 24's
+      # bundled npm may be older, so pin the latest npm explicitly.
+      - run: npm install -g npm@latest
 
       # The release tag IS the version to publish.
       - name: Sync package.json version from the release tag
@@ -34,15 +36,9 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # Trusted publishing (OIDC): no NPM_TOKEN secret needed.
-      # Requires an npm trusted-publisher entry: ashutoshsononey, provider
-      # "GitHub Actions", owner AshutoshGitMirror, repo opencode-vision-plugin,
-      # workflow publish.yml, environment any.
-      - name: Debug OIDC env
-        run: |
-          echo "ID_URL=${ACTIONS_ID_TOKEN_REQUEST_URL:+SET}"
-          echo "ID_TOKEN=${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+SET}"
-          echo "GITHUB_ACTIONS=$GITHUB_ACTIONS"
-          npm config ls
+      # Trusted publishing (OIDC): no NPM_TOKEN secret needed; provenance is
+      # auto-generated. Requires the npm trusted-publisher entry:
+      # ashutoshsononey, provider "GitHub Actions", owner AshutoshGitMirror,
+      # repo opencode-vision-plugin, workflow publish.yml, env any.
       - name: Publish to npm (OIDC)
-        run: npm publish --access public --provenance
+        run: npm publish --access public
