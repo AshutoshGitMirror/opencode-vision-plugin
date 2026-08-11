@@ -22,20 +22,7 @@ __export(vision_exports, {
   default: () => vision_default
 });
 module.exports = __toCommonJS(vision_exports);
-
-// runtime-stub.ts
-function tool(def) {
-  return def;
-}
-tool.schema = {
-  string: () => ({ __kind: "string" }),
-  boolean: () => ({ __kind: "boolean" }),
-  optional: (s) => ({ __kind: "optional", inner: s }),
-  number: () => ({ __kind: "number" }),
-  object: (o) => ({ __kind: "object", fields: o })
-};
-
-// vision.ts
+var import_plugin = require("@opencode-ai/plugin");
 var import_promises = require("node:fs/promises");
 var import_node_path = require("node:path");
 var isOk = (r) => r.ok;
@@ -265,13 +252,13 @@ var plugin = async (_input, pluginOptions) => {
   const cfg = loadConfig(pluginOptions);
   return {
     tool: {
-      describe: tool({
+      describe: (0, import_plugin.tool)({
         description: `Vision describe: composition, layout, colors, objects, ALL visible text, context. blind (REQUIRED): true = reader cannot see the image \u2014 exhaustive spatial description; false = normal. DEFAULT (omit model) = DUAL mode: two NIM VLMs \u2014 structured overview + fine detail \u2014 labelled sections, best fidelity; prefer it. Single view ONLY for one-offs: "meta/llama-3.2-90b-vision-instruct" (overview), "nvidia/nemotron-nano-12b-v2-vl" (sharp detail), "meta/llama-3.2-11b-vision-instruct" (light), "gemini-3.6-flash". Flaky models \u2014 call independently.`,
         args: {
-          image_path: tool.schema.string(),
-          blind: tool.schema.boolean(),
-          prompt: tool.schema.optional(tool.schema.string()),
-          model: tool.schema.optional(tool.schema.string())
+          image_path: import_plugin.tool.schema.string(),
+          blind: import_plugin.tool.schema.boolean(),
+          prompt: import_plugin.tool.schema.optional(import_plugin.tool.schema.string()),
+          model: import_plugin.tool.schema.optional(import_plugin.tool.schema.string())
         },
         async execute(args) {
           if (!args.image_path || typeof args.image_path !== "string") return "Missing required: image_path";
@@ -291,12 +278,12 @@ var plugin = async (_input, pluginOptions) => {
           }
         }
       }),
-      ocr: tool({
+      ocr: (0, import_plugin.tool)({
         description: `OCR: extract ALL visible text verbatim \u2014 screenshots, UI, documents, receipts, diagrams, photos, memes, whiteboards. Returns only the extracted text. blind (REQUIRED): true = reader cannot see the image. Use for anything text-bearing; never guess text from context.`,
         args: {
-          image_path: tool.schema.string(),
-          blind: tool.schema.boolean(),
-          model: tool.schema.optional(tool.schema.string())
+          image_path: import_plugin.tool.schema.string(),
+          blind: import_plugin.tool.schema.boolean(),
+          model: import_plugin.tool.schema.optional(import_plugin.tool.schema.string())
         },
         async execute(args) {
           if (!args.image_path || typeof args.image_path !== "string") return "Missing required: image_path";
@@ -310,12 +297,12 @@ var plugin = async (_input, pluginOptions) => {
           }
         }
       }),
-      analyze: tool({
+      analyze: (0, import_plugin.tool)({
         description: `Full vision analysis: source metadata + DUAL description + OCR in one call \u2014 screenshot/UI/document forensics, audits, evidence extraction, comprehensive understanding. Slower (multi-call); prefer describe for quick questions. blind (REQUIRED): true = reader cannot see the image \u2014 exhaustive spatial description. Omit model = DUAL mode.`,
         args: {
-          image_path: tool.schema.string(),
-          blind: tool.schema.boolean(),
-          model: tool.schema.optional(tool.schema.string())
+          image_path: import_plugin.tool.schema.string(),
+          blind: import_plugin.tool.schema.boolean(),
+          model: import_plugin.tool.schema.optional(import_plugin.tool.schema.string())
         },
         async execute(args) {
           if (!args.image_path || typeof args.image_path !== "string") return "Missing required: image_path";
