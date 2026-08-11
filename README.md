@@ -77,7 +77,11 @@ skip the block entirely.
   NIM keeps you working.
 - `vision_describe` with no `model` runs two NIM VLMs and returns each labelled
   section (structured + detail) — this is the recommended default call. The tool
-  description steers agents to it and against per-call model-hopping.
+  description steers agents to it; models are flaky, so calls are independent.
+- Every tool takes a compulsory `blind` boolean: `true` means the reader cannot
+  see the image, so the description must be exhaustive and spatial (the
+  blind-reader clause is appended to the prompt). `false` = normal description.
+  The flag decides the prompt — no hardcoded per-model rules.
 - `image_path` accepts a local path, an `https` URL, or a `data:` URL.
 
 ## Available models

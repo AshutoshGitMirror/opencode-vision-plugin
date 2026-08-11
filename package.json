@@ -1,6 +1,6 @@
 {
   "name": "opencode-vision-plugin",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Visual vision tools (describe, OCR, analyze) for opencode as an in-process plugin. Direct fetch to Gemini + NVIDIA NIM with provider-chain fallback, dual-describe, and nested-object config. No MCP server, no subprocess, no pip.",
   "main": "opencode-vision-plugin.js",
   "types": "index.d.ts",

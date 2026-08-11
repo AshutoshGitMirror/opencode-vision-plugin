@@ -1,8 +1,6 @@
-var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __export = (target, all) => {
   for (var name in all)
@@ -16,14 +14,6 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // vision.ts
@@ -39,15 +29,16 @@ function tool(def) {
 }
 tool.schema = {
   string: () => ({ __kind: "string" }),
+  boolean: () => ({ __kind: "boolean" }),
   optional: (s) => ({ __kind: "optional", inner: s }),
   number: () => ({ __kind: "number" }),
   object: (o) => ({ __kind: "object", fields: o })
 };
 
 // vision.ts
-function isErr(r) {
-  return "error" in r && typeof r.error === "string";
-}
+var import_promises = require("node:fs/promises");
+var import_node_path = require("node:path");
+var isOk = (r) => r.ok;
 var DEFAULT_MODELS = {
   gemini: "gemini-3.6-flash",
   nim: "meta/llama-3.2-90b-vision-instruct"
@@ -56,7 +47,7 @@ var DUAL_MODELS = [
   ["meta/llama-3.2-90b-vision-instruct", "structured overall description"],
   ["nvidia/nemotron-nano-12b-v2-vl", "sharp low-level visual detail"]
 ];
-function defaults() {
+function defaultConfig() {
   return {
     provider: "chain",
     chain: ["gemini", "nim"],
@@ -70,60 +61,51 @@ function defaults() {
   };
 }
 var ENV_RE = /\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g;
-function interpStr(s) {
-  return s.replace(ENV_RE, (_, name) => process.env[name] ?? "");
+function interp(s) {
+  return s.replace(ENV_RE, (_match, name) => process.env[name] ?? "");
 }
 function deepInterp(v) {
-  if (typeof v === "string") return interpStr(v);
+  if (typeof v === "string") return interp(v);
   if (Array.isArray(v)) return v.map(deepInterp);
   if (v && typeof v === "object") {
-    const o = {};
-    for (const k of Object.keys(v)) o[k] = deepInterp(v[k]);
-    return o;
+    const out = {};
+    for (const [key, value] of Object.entries(v)) out[key] = deepInterp(value);
+    return out;
   }
   return v;
 }
-function applyEnvFallbacks(c) {
-  if (!c.keys.gemini && process.env.GEMINI_API_KEY) c.keys.gemini = process.env.GEMINI_API_KEY;
-  if (!c.keys.gemini && process.env.GOOGLE_API_KEY) c.keys.gemini = process.env.GOOGLE_API_KEY;
-  if (!c.keys.nim && process.env.NVIDIA_API_KEY) c.keys.nim = process.env.NVIDIA_API_KEY;
-  return c;
+function entries(v) {
+  return v && typeof v === "object" ? Object.entries(v) : [];
 }
 function loadConfig(raw) {
-  const c = defaults();
-  if (!raw) return applyEnvFallbacks(c);
-  const r = deepInterp(raw);
-  if (typeof r.provider === "string") c.provider = r.provider;
-  if (Array.isArray(r.chain)) c.chain = r.chain.filter(Boolean);
-  const models = r.models && typeof r.models === "object" ? r.models : {};
-  for (const k of Object.keys(models)) if (typeof models[k] === "string") c.models[k] = models[k];
-  c.models = Object.fromEntries(Object.entries(c.models).filter(([_, v]) => typeof v === "string"));
-  const keys = r.keys && typeof r.keys === "object" ? r.keys : {};
-  for (const k of Object.keys(keys)) if (typeof keys[k] === "string") c.keys[k] = keys[k];
-  const bu = r.baseUrls && typeof r.baseUrls === "object" ? r.baseUrls : {};
-  for (const k of Object.keys(bu)) if (typeof bu[k] === "string") c.baseUrls[k] = bu[k];
-  if (typeof r.timeout_ms === "number") c.timeoutMs = r.timeout_ms;
-  if (typeof r.timeout === "number") c.timeoutMs = r.timeout;
-  return applyEnvFallbacks(c);
+  const cfg = defaultConfig();
+  const user = deepInterp(raw ?? {});
+  if (typeof user.provider === "string") cfg.provider = user.provider;
+  if (Array.isArray(user.chain)) cfg.chain = user.chain.filter((x) => x === "gemini" || x === "nim");
+  for (const [key, value] of entries(user.models)) if (typeof value === "string") cfg.models[key] = value;
+  for (const [key, value] of entries(user.keys)) if (typeof value === "string") cfg.keys[key] = value;
+  for (const [key, value] of entries(user.baseUrls)) if (typeof value === "string") cfg.baseUrls[key] = value;
+  if (typeof user.timeout_ms === "number") cfg.timeoutMs = user.timeout_ms;
+  if (typeof user.timeout === "number") cfg.timeoutMs = user.timeout;
+  if (!cfg.keys.gemini && process.env.GEMINI_API_KEY) cfg.keys.gemini = process.env.GEMINI_API_KEY;
+  if (!cfg.keys.gemini && process.env.GOOGLE_API_KEY) cfg.keys.gemini = process.env.GOOGLE_API_KEY;
+  if (!cfg.keys.nim && process.env.NVIDIA_API_KEY) cfg.keys.nim = process.env.NVIDIA_API_KEY;
+  return cfg;
 }
 async function resolveImage(ref) {
-  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(ref)) {
+  if (ref.startsWith("data:image/") && ref.includes(";base64,")) {
     const [head, b64] = ref.split(",", 2);
-    const mime = /image\/([a-z0-9.+-]+)/i.exec(head)?.[0] ?? "image/png";
+    const mime = /image\/[a-z0-9.+-]+/i.exec(head)?.[0] ?? "image/png";
     return { data: b64, mime };
   }
   if (/^https?:\/\//i.test(ref)) {
-    const resp = await fetch(ref);
-    if (!resp.ok) throw new Error(`Failed to fetch image URL: HTTP ${resp.status}`);
-    const buf2 = new Uint8Array(await resp.arrayBuffer());
-    const b64 = Buffer.from(buf2).toString("base64");
-    const mime = resp.headers.get("content-type")?.split(";")[0] || "image/png";
-    return { data: b64, mime };
+    const response = await fetch(ref);
+    if (!response.ok) throw new Error(`Failed to fetch image URL: HTTP ${response.status}`);
+    const buf2 = new Uint8Array(await response.arrayBuffer());
+    const mime = response.headers.get("content-type")?.split(";")[0] || "image/png";
+    return { data: Buffer.from(buf2).toString("base64"), mime };
   }
-  const { readFile } = await import("node:fs/promises");
-  const pathObj = new URL("file:" + (await import("node:path")).resolve(ref));
-  const buf = await readFile(pathObj);
-  const ext = (await import("node:path")).extname(ref).toLowerCase();
+  const buf = await (0, import_promises.readFile)((0, import_node_path.resolve)(ref));
   const MIME = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -137,71 +119,8 @@ async function resolveImage(ref) {
     ".heic": "image/heic",
     ".heif": "image/heif"
   };
+  const ext = (0, import_node_path.extname)(ref).toLowerCase();
   return { data: Buffer.from(buf).toString("base64"), mime: MIME[ext] ?? "image/png" };
-}
-async function nimCall(cfg, model, prompt, img, timeoutMs) {
-  const key = cfg.keys.nim;
-  if (!key) return { error: "NVIDIA_API_KEY missing (config keys.nim)" };
-  const url = `${cfg.baseUrls.nim}/chat/completions`;
-  const body = {
-    model,
-    messages: [{
-      role: "user",
-      content: [
-        { type: "text", text: prompt },
-        { type: "image_url", image_url: { url: `data:${img.mime};base64,${img.data}` } }
-      ]
-    }],
-    max_tokens: 1024,
-    temperature: 0.2
-  };
-  let resp;
-  try {
-    resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-  } catch (e) {
-    return { error: `NIM fetch failed: ${e?.message ?? String(e)}` };
-  }
-  if (!resp.ok) return { error: `NIM HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}` };
-  const j = await resp.json();
-  const text = j.choices?.[0]?.message?.content;
-  if (!text) return { error: "[EMPTY] no content from NIM" };
-  return { text: text.trim() };
-}
-async function geminiCall(cfg, model, prompt, img, timeoutMs) {
-  const key = cfg.keys.gemini;
-  if (!key) return { error: "Gemini key missing (config keys.gemini)" };
-  const url = `${cfg.baseUrls.gemini}/models/${model}:generateContent?key=${key}`;
-  const body = {
-    contents: [{
-      parts: [
-        { text: prompt },
-        { inline_data: { mime_type: img.mime, data: img.data } }
-      ]
-    }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
-  };
-  let resp;
-  try {
-    resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-  } catch (e) {
-    return { error: `Gemini fetch failed: ${e?.message ?? String(e)}` };
-  }
-  if (!resp.ok) return { error: `Gemini HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}` };
-  const j = await resp.json().catch(() => null);
-  const parts = j?.candidates?.[0]?.content?.parts;
-  const text = Array.isArray(parts) ? parts.map((p) => p?.text ?? "").join("") : "";
-  if (!text) return { error: "[Gemini] no text in response" };
-  return { text: text.trim() };
 }
 var DESCRIBE_PROMPT = `Describe this image comprehensively and objectively. Include:
 1. Main subject and composition
@@ -222,149 +141,202 @@ reader's ONLY source of visual truth, so be exhaustive and explicitly spatial:
   what is interactive, and read off all visible text verbatim.
 - Use precise, concrete words. Avoid "you can see" / "as shown" assumptions; the
   reader cannot see \u2014 leave nothing implied.`;
-function describePromptFor(model, prompt) {
-  if (prompt) return prompt;
-  const m = (model ?? "").toLowerCase();
-  if (m.startsWith("gemini")) return `${DESCRIBE_PROMPT}
-
-${BLIND_READER_CLAUSE}`;
-  return DESCRIBE_PROMPT;
-}
 var OCR_PROMPT = `Extract ALL text from this image EXACTLY as it appears.
 Preserve the original language, capitalization, line breaks, and formatting.
 Return ONLY the extracted text with no commentary.
 If there is no readable text, say "[No text detected]".`;
-async function callSingle(cfg, provider, method, prompt, img, model, budgetMs) {
-  if (method === "describe") prompt = describePromptFor(model, prompt);
-  const effective = prompt || (method === "describe" ? DESCRIBE_PROMPT : OCR_PROMPT);
-  const remaining = () => budgetMs ?? cfg.timeoutMs;
-  if (provider === "gemini") return geminiCall(cfg, model ?? cfg.models.gemini ?? DEFAULT_MODELS.gemini, effective, img, remaining());
-  if (provider === "nim") return nimCall(cfg, model ?? cfg.models.nim ?? DEFAULT_MODELS.nim, effective, img, remaining());
-  if (provider === "chain") {
-    if (model) {
-      const owner = model.startsWith("gemini") ? "gemini" : "nim";
-      const r = await callSingle(cfg, owner, method, prompt, img, model, budgetMs ?? cfg.timeoutMs);
-      if (!isErr(r)) return r;
-      return r;
-    }
-  }
-  const chain = cfg.chain.length ? cfg.chain : ["gemini", "nim"];
-  const deadline = Date.now() + (budgetMs ?? cfg.timeoutMs);
-  const budgetEach = Math.max(2e3, Math.floor((budgetMs ?? cfg.timeoutMs) / chain.length));
-  let last = { error: "no provider" };
-  for (const p of chain) {
-    if (Date.now() >= deadline) {
-      last = { error: `chain deadline exceeded (provider ${p} skipped)` };
-      break;
-    }
-    const slice = Math.max(1e3, Math.min(budgetEach, deadline - Date.now()));
-    const r = await callSingle(cfg, p, method, prompt, img, void 0, slice);
-    if (!isErr(r)) return r;
+var BLIND_CALIBRATION = `
+CALIBRATION \u2014 follow the framework sequence for the matching category. The good
+example is the target style (precise, measured, spatial); the bad example is the
+style to avoid.
+
+1. Data & Technical Visuals (graphs, charts, diagrams)
+   Framework: Identity \u2192 Axis/Scale \u2192 Trend Line \u2192 Key Anomalies
+   Bad: "This is a line graph showing sales going up and down over the last year, with a huge drop in the middle."
+   Good: "A 2D line graph tracking monthly revenue across 12 months. The horizontal X-axis plots time from January to December. The vertical Y-axis measures revenue from zero to one hundred thousand dollars. The data line rises steadily from forty thousand in January to a peak of ninety thousand in June, plunges sharply to ten thousand in July, and recovers to eighty thousand by December."
+
+2. Physical Spatial Environments (real-world scenes, landscapes, labs)
+   Framework: Z-Axis Depth (Foreground to Background) \u2192 Clock-Face Anchors \u2192 Textures/Lighting
+   Bad: "A crowded, messy workshop filled with dangerous tools and electronics scattered all over the place."
+   Good: "A brightly lit, five-meter-wide electronics laboratory. In the foreground at 6 o'clock sits a wooden workbench littered with copper wires, a silver soldering iron, and green circuit boards. In the midground at 3 o'clock, a tall steel rack houses stacked digital oscilloscopes with glowing green grid screens. In the background, a concrete wall features a wide glass window revealing an outdoor courtyard."
+
+3. Abstract Concepts & Human Elements (art, infographics, behavior)
+   Framework: Core Subject \u2192 Micro-Details/Geometry \u2192 Objective Action \u2192 Color/Composition
+   Bad: "An inspirational infographic about success showing a businessman looking proud after finally reaching his goal."
+   Good: "A minimalist vector infographic on a solid white background. The central graphic is a black, stepped pyramid with five distinct levels. A stylized human silhouette clad in a sharp charcoal suit stands atop the highest peak. The silhouette holds a bright yellow, triangular flag pointing upward to the right. Crisp, black sans-serif text labels sit horizontally beneath each step of the pyramid."`;
+function describePrompt(blind, userPrompt) {
+  if (userPrompt) return userPrompt;
+  return blind ? `${DESCRIBE_PROMPT}
+
+${BLIND_READER_CLAUSE}
+
+${BLIND_CALIBRATION}` : DESCRIBE_PROMPT;
+}
+function ownerOf(model) {
+  return model.startsWith("gemini") ? "gemini" : "nim";
+}
+async function providerCall(cfg, provider, model, prompt, img, timeoutMs) {
+  return provider === "gemini" ? geminiCall(cfg, model, prompt, img, timeoutMs) : nimCall(cfg, model, prompt, img, timeoutMs);
+}
+async function runWithChain(cfg, model, prompt, img) {
+  const providers = model ? [ownerOf(model)] : cfg.chain;
+  const perProvider = Math.max(2e3, Math.floor(cfg.timeoutMs / providers.length));
+  let last = { ok: false, error: "no provider available" };
+  for (const provider of providers) {
+    const chosen = model ?? cfg.models[provider] ?? DEFAULT_MODELS[provider];
+    const r = await providerCall(cfg, provider, chosen, prompt, img, perProvider);
+    if (isOk(r)) return r;
     last = r;
   }
   return last;
 }
-async function dualDescribe(cfg, img, prompt) {
-  let text = "";
+async function dualDescribe(cfg, img, blind, userPrompt) {
+  const prompt = describePrompt(blind, userPrompt);
+  const sections = [];
   let anyOk = false;
   for (const [model, label] of DUAL_MODELS) {
-    const r = await nimCall(cfg, model, prompt || DESCRIBE_PROMPT, img, cfg.timeoutMs);
-    if (!isErr(r)) {
-      anyOk = true;
-      text += `\u2550\u2550\u2550 ${label} \u2014 ${model} \u2550\u2550\u2550
+    const r = await nimCall(cfg, model, prompt, img, cfg.timeoutMs);
+    if (isOk(r)) anyOk = true;
+    sections.push(`\u2550\u2550\u2550 ${label} \u2014 ${model} \u2550\u2550\u2550
 
-${r.text}
-
-`;
-    } else {
-      text += `\u2550\u2550\u2550 ${label} \u2014 ${model} \u2550\u2550\u2550
-
-\u26A0\uFE0F FAILED: ${r.error}
-
-`;
-    }
+${isOk(r) ? r.text : "\u26A0\uFE0F FAILED: " + r.error}`);
   }
-  if (!anyOk) return { error: "Dual NIM describe failed" };
-  return { text: text.trim() };
+  return anyOk ? { ok: true, text: sections.join("\n\n").trim() } : { ok: false, error: "Dual NIM describe failed" };
+}
+async function nimCall(cfg, model, prompt, img, timeoutMs) {
+  const key = cfg.keys.nim;
+  if (!key) return { ok: false, error: "NVIDIA_API_KEY missing (config keys.nim)" };
+  const body = {
+    model,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: `data:${img.mime};base64,${img.data}` } }
+      ]
+    }],
+    max_tokens: 1024,
+    temperature: 0.2
+  };
+  try {
+    const response = await fetch(`${cfg.baseUrls.nim}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    if (!response.ok) return { ok: false, error: `NIM HTTP ${response.status}: ${(await response.text()).slice(0, 300)}` };
+    const json = await response.json();
+    const text = json.choices?.[0]?.message?.content;
+    return text ? { ok: true, text: text.trim() } : { ok: false, error: "[EMPTY] no content from NIM" };
+  } catch (e) {
+    return { ok: false, error: `NIM fetch failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+async function geminiCall(cfg, model, prompt, img, timeoutMs) {
+  const key = cfg.keys.gemini;
+  if (!key) return { ok: false, error: "Gemini key missing (config keys.gemini)" };
+  const body = {
+    contents: [{
+      parts: [
+        { text: prompt },
+        { inline_data: { mime_type: img.mime, data: img.data } }
+      ]
+    }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+  };
+  try {
+    const response = await fetch(`${cfg.baseUrls.gemini}/models/${model}:generateContent?key=${key}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    if (!response.ok) return { ok: false, error: `Gemini HTTP ${response.status}: ${(await response.text()).slice(0, 300)}` };
+    const json = await response.json();
+    const parts = json.candidates?.[0]?.content?.parts;
+    const text = Array.isArray(parts) ? parts.map((p) => p?.text ?? "").join("") : "";
+    return text ? { ok: true, text: text.trim() } : { ok: false, error: "[Gemini] no text in response" };
+  } catch (e) {
+    return { ok: false, error: `Gemini fetch failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }
 var plugin = async (_input, pluginOptions) => {
   const cfg = loadConfig(pluginOptions);
   return {
     tool: {
       describe: tool({
-        description: `Describe an image in detail: composition, colors, objects, all visible text, context.
-PREFERRED default: call WITHOUT the model arg \u2014 this runs the built-in dual mode (two complementary NIM VLMs: structured + fine detail) and returns labelled sections. This is the best overall result; use it unless you have a specific reason not to.
-Only set model when you specifically want ONE view, e.g. "meta/llama-3.2-90b-vision-instruct" (structured overview), "nvidia/nemotron-nano-12b-v2-vl" (sharp low-level detail), "meta/llama-3.2-11b-vision-instruct" (light), "nvidia/llama-3.1-nemotron-nano-vl-8b-v1" (concise), "gemini-3.6-flash". RULES: (1) do NOT switch models across repeated calls \u2014 pick the default dual mode once and keep it, so results are comparable; (2) only pass model for a genuine one-off need, never to sample/experiment; (3) never pass a gemini model to a NIM task or vice-versa \u2014 each model belongs to its own provider.`,
+        description: `Vision describe: composition, layout, colors, objects, ALL visible text, context. blind (REQUIRED): true = reader cannot see the image \u2014 exhaustive spatial description; false = normal. DEFAULT (omit model) = DUAL mode: two NIM VLMs \u2014 structured overview + fine detail \u2014 labelled sections, best fidelity; prefer it. Single view ONLY for one-offs: "meta/llama-3.2-90b-vision-instruct" (overview), "nvidia/nemotron-nano-12b-v2-vl" (sharp detail), "meta/llama-3.2-11b-vision-instruct" (light), "gemini-3.6-flash". Flaky models \u2014 call independently.`,
         args: {
           image_path: tool.schema.string(),
+          blind: tool.schema.boolean(),
           prompt: tool.schema.optional(tool.schema.string()),
           model: tool.schema.optional(tool.schema.string())
         },
-        async execute(args, ctx) {
-          if (!args.image_path || typeof args.image_path !== "string" || !String(args.image_path).trim()) {
-            return "Missing required: image_path";
-          }
-          const ref = String(args.image_path);
-          const prompt = typeof args.prompt === "string" ? args.prompt : "";
-          const model = typeof args.model === "string" && args.model ? args.model : void 0;
+        async execute(args) {
+          if (!args.image_path || typeof args.image_path !== "string") return "Missing required: image_path";
+          if (typeof args.blind !== "boolean") return "Missing required: blind (true/false)";
+          const prompt = args.prompt ?? "";
+          const model = args.model ?? void 0;
           try {
-            const img = await resolveImage(ref);
-            if (!model) {
-              const d = await dualDescribe(cfg, img, prompt);
-              if (!isErr(d)) return d.text;
+            const img = await resolveImage(args.image_path);
+            if (model) {
+              const r = await runWithChain(cfg, model, describePrompt(args.blind, prompt), img);
+              return isOk(r) ? r.text : r.error;
             }
-            const r = await callSingle(cfg, cfg.provider, "describe", prompt, img, model);
-            return isErr(r) ? r.error : r.text;
+            const d = await dualDescribe(cfg, img, args.blind, prompt);
+            return isOk(d) ? d.text : d.error;
           } catch (e) {
-            return `Error: ${e?.message ?? String(e)}`;
+            return `Error: ${e instanceof Error ? e.message : String(e)}`;
           }
         }
       }),
       ocr: tool({
-        description: "Extract all visible text from an image (path, URL, or data: URL). Returns only the extracted text.",
+        description: `OCR: extract ALL visible text verbatim \u2014 screenshots, UI, documents, receipts, diagrams, photos, memes, whiteboards. Returns only the extracted text. blind (REQUIRED): true = reader cannot see the image. Use for anything text-bearing; never guess text from context.`,
         args: {
           image_path: tool.schema.string(),
+          blind: tool.schema.boolean(),
           model: tool.schema.optional(tool.schema.string())
         },
         async execute(args) {
-          if (!args.image_path || typeof args.image_path !== "string") return "Missing image_path";
-          const model = typeof args.model === "string" && args.model ? args.model : void 0;
+          if (!args.image_path || typeof args.image_path !== "string") return "Missing required: image_path";
+          if (typeof args.blind !== "boolean") return "Missing required: blind (true/false)";
           try {
-            const img = await resolveImage(String(args.image_path));
-            const r = await callSingle(cfg, cfg.provider, "ocr", "", img, model);
-            return isErr(r) ? r.error : r.text;
+            const img = await resolveImage(args.image_path);
+            const r = await runWithChain(cfg, args.model ?? void 0, OCR_PROMPT, img);
+            return isOk(r) ? r.text : r.error;
           } catch (e) {
-            return `Error: ${e?.message ?? String(e)}`;
+            return `Error: ${e instanceof Error ? e.message : String(e)}`;
           }
         }
       }),
       analyze: tool({
-        description: `Heavyweight combined analysis: metadata + visual description + text extraction. Use ONLY when you need all three (e.g. document/screenshot forensics). For ordinary image understanding, prefer the lighter describe tool (dual mode default) instead; analyze is slower and costs extra calls. model is optional; omit it to get the default model.`,
+        description: `Full vision analysis: source metadata + DUAL description + OCR in one call \u2014 screenshot/UI/document forensics, audits, evidence extraction, comprehensive understanding. Slower (multi-call); prefer describe for quick questions. blind (REQUIRED): true = reader cannot see the image \u2014 exhaustive spatial description. Omit model = DUAL mode.`,
         args: {
           image_path: tool.schema.string(),
+          blind: tool.schema.boolean(),
           model: tool.schema.optional(tool.schema.string())
         },
-        async execute(args, ctx) {
-          if (!args.image_path || typeof args.image_path !== "string") return "unknown image_path";
-          const model = typeof args.model === "string" && args.model ? args.model : void 0;
-          const ref = String(args.image_path);
+        async execute(args) {
+          if (!args.image_path || typeof args.image_path !== "string") return "Missing required: image_path";
+          if (typeof args.blind !== "boolean") return "Missing required: blind (true/false)";
           try {
-            const img = await resolveImage(ref);
-            const desc = await callSingle(cfg, cfg.provider, "describe", "", img, model);
-            const oc = await callSingle(cfg, cfg.provider, "ocr", OCR_PROMPT, img);
-            const meta = ref.startsWith("data:") ? "data: URL" : `path: ${ref}`;
+            const img = await resolveImage(args.image_path);
+            const desc = args.model ? await runWithChain(cfg, args.model, describePrompt(args.blind, ""), img) : await dualDescribe(cfg, img, args.blind, "");
+            const ocr = await runWithChain(cfg, void 0, OCR_PROMPT, img);
+            const meta = args.image_path.startsWith("data:") ? "data: URL" : `path: ${args.image_path}`;
             return [
               `\u{1F4D0} SOURCE`,
               meta,
               `
 \u{1F5BC}\uFE0F  VISUAL DESCRIPTION
-${isErr(desc) ? "\u26A0\uFE0F " + desc.error : desc.text}`,
+${isOk(desc) ? desc.text : "\u26A0\uFE0F " + desc.error}`,
               `
 \u{1F4C4} TEXT CONTENT
-${isErr(oc) ? "\u26A0\uFE0F " + oc.error : oc.text}`
+${isOk(ocr) ? ocr.text : "\u26A0\uFE0F " + ocr.error}`
             ].join("\n");
           } catch (e) {
-            return `Error: ${e?.message ?? String(e)}`;
+            return `Error: ${e instanceof Error ? e.message : String(e)}`;
           }
         }
       })

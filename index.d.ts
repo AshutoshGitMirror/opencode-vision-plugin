@@ -29,6 +29,8 @@ export interface VisionOptions {
 export interface DescribeArgs {
   /** Absolute image path, https:// URL, or data: URL */
   image_path: string
+  /** Required. true = the reader cannot see the image — exhaustive spatial description */
+  blind: boolean
   /** Optional custom question about the image */
   prompt?: string
   /** Optional vision model override */
@@ -37,11 +39,13 @@ export interface DescribeArgs {
 
 export interface OcrArgs {
   image_path: string
+  blind: boolean
   model?: string
 }
 
 export interface AnalyzeArgs {
   image_path: string
+  blind: boolean
   model?: string
 }
 
