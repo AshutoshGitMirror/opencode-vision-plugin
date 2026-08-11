@@ -19,7 +19,7 @@ jobs:
 
       # The release tag IS the version to publish.
       - name: Sync package.json version from the release tag
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
 
       - run: npm ci
       - run: npm run build
