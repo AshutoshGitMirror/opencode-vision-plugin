@@ -10,6 +10,9 @@ on:
 jobs:
   npm:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +28,9 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Trusted publishing (OIDC): no NPM_TOKEN secret needed.
+      # Requires an npm trusted-publisher entry: ashutoshsononey, provider
+      # "GitHub Actions", owner AshutoshGitMirror, repo opencode-vision-plugin,
+      # workflow publish.yml, environment any.
+      - name: Publish to npm (OIDC)
+        run: npm publish --access public --provenance
